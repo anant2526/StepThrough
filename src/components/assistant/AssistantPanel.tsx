@@ -2,7 +2,7 @@
 
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '@/lib/store';
-import { Bot, X, Send, Sparkles, Zap, ShieldQuestion, HelpCircle } from 'lucide-react';
+import { Bot, X, Send, Sparkles, Zap, ShieldQuestion, HelpCircle, RotateCcw } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 
 const suggestions = [
@@ -12,10 +12,15 @@ const suggestions = [
   "Find scholarships for B.Tech students",
 ];
 
+interface ChatMessage {
+  role: 'user' | 'assistant';
+  text: string;
+}
+
 export default function AssistantPanel() {
   const { isAssistantOpen, toggleAssistant, user } = useAppStore();
-  const [messages, setMessages] = useState<{role: 'user' | 'assistant', text: string}[]>([
-    { role: 'assistant', text: `Hello ${user?.name?.split(' ')[0] || 'there'}! I'm your StepThrough AI Mentor. How can I guide you today?` }
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    { role: 'assistant', text: `Hello ${user?.name?.split(' ')[0] || 'there'}! 👋 I'm your **StepThrough AI Mentor** — powered by Google Gemini.\n\nI can help you with:\n- 🏛️ Government schemes & applications\n- 📋 Document requirements & processes\n- 🎓 Scholarships & education\n- 💡 Any general question!\n\nWhat would you like to know?` }
   ]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -25,55 +30,68 @@ export default function AssistantPanel() {
   useEffect(() => { scrollToBottom(); }, [messages]);
 
   const handleSend = async () => {
-    if (!input.trim()) return;
-    const userMessage = input;
-    setMessages(prev => [...prev, { role: 'user', text: userMessage }]);
-    setInput(''); setIsTyping(true);
-    try {
-      const apiBase = process.env.NEXT_PUBLIC_API_URL || '';
-      let res;
-      let usingLocalFallback = false;
-      
-      try {
-        res = await fetch(`${apiBase}/api/schemes/ask`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ question: userMessage }),
-          signal: AbortSignal.timeout(6000) // 6-second timeout for Hugging Face wake check
-        });
-        const ct = res.headers.get('content-type') || '';
-        if (!res.ok || !ct.includes('application/json')) {
-          throw new Error('HF backend returned status ' + res.status);
-        }
-      } catch (hfErr) {
-        if (apiBase) {
-          console.warn('HF Space connection failed, falling back to Next.js local search:', hfErr);
-          usingLocalFallback = true;
-          res = await fetch(`/api/schemes/ask`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ question: userMessage })
-          });
-          const ct = res.headers.get('content-type') || '';
-          if (!res.ok || !ct.includes('application/json')) {
-            throw new Error('Local fallback failed');
-          }
-        } else {
-          throw hfErr;
-        }
-      }
+    if (!input.trim() || isTyping) return;
+    const userMessage = input.trim();
+    const newMessages: ChatMessage[] = [...messages, { role: 'user', text: userMessage }];
+    setMessages(newMessages);
+    setInput('');
+    setIsTyping(true);
 
-      const data = await res.json();
-      if (data.success && data.data?.answer) {
-        let answer = data.data.answer;
-        if (usingLocalFallback) {
-          answer = "⚡ *(Hugging Face Space is waking up. Serving response via local search fallback)*\n\n" + answer;
-        }
-        setMessages(prev => [...prev, { role: 'assistant', text: answer }]);
+    try {
+      // Send conversation history (skip the initial greeting for cleaner context)
+      const historyToSend = newMessages.slice(1, -1); // exclude first greeting and current message
+
+      const res = await fetch('/api/schemes/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: userMessage,
+          messages: historyToSend,
+        }),
+      });
+
+      const data = await res.json().catch(() => null);
+
+      if (data?.success && data.data?.answer) {
+        setMessages(prev => [...prev, { role: 'assistant', text: data.data.answer }]);
       } else {
-        setMessages(prev => [...prev, { role: 'assistant', text: "I'm sorry, I couldn't process your request right now. Please try again." }]);
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          text: `⚠️ ${data?.error || 'Something went wrong. Please try again.'}`
+        }]);
       }
     } catch (err) {
-      setMessages(prev => [...prev, { role: 'assistant', text: "I'm having trouble connecting to my servers. Please ensure the backend is running." }]);
-    } finally { setIsTyping(false); }
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        text: "⚠️ I'm having trouble connecting to the AI server. Please check your internet connection and try again."
+      }]);
+    } finally {
+      setIsTyping(false);
+    }
+  };
+
+  const handleClearChat = () => {
+    setMessages([
+      { role: 'assistant', text: `Hello ${user?.name?.split(' ')[0] || 'there'}! 👋 I'm your **StepThrough AI Mentor** — powered by Google Gemini.\n\nI can help you with:\n- 🏛️ Government schemes & applications\n- 📋 Document requirements & processes\n- 🎓 Scholarships & education\n- 💡 Any general question!\n\nWhat would you like to know?` }
+    ]);
+  };
+
+  // Simple markdown-like rendering for bold text
+  const renderText = (text: string) => {
+    // Split by **bold** markers and render
+    const parts = text.split(/(\*\*[^*]+\*\*)/g);
+    return parts.map((part, i) => {
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return <strong key={i} className="font-bold">{part.slice(2, -2)}</strong>;
+      }
+      // Handle line breaks
+      return part.split('\n').map((line, j) => (
+        <span key={`${i}-${j}`}>
+          {j > 0 && <br />}
+          {line}
+        </span>
+      ));
+    });
   };
 
   return (
@@ -98,21 +116,27 @@ export default function AssistantPanel() {
           {/* Header */}
           <div className="p-6 border-b border-[var(--st-glass-border)] flex items-center justify-between" style={{ background: 'rgba(250,250,249,0.8)' }}>
             <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl flex items-center justify-center shadow-sm relative animate-pulse" style={{ background: 'var(--st-gradient-hero)' }}>
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center shadow-sm relative" style={{ background: 'var(--st-gradient-hero)' }}>
                 <Bot className="w-6 h-6 text-white" />
                 <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white" style={{ background: 'var(--st-accent-success)' }} />
               </div>
               <div>
                 <h3 className="text-lg font-bold text-[var(--st-text-primary)] tracking-tight">AI Mentor</h3>
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-bold text-[var(--st-text-faint)] uppercase tracking-[0.2em]">Certified Assistant</span>
+                  <span className="text-[10px] font-bold text-[var(--st-text-faint)] uppercase tracking-[0.2em]">Gemini Powered</span>
                 </div>
               </div>
             </div>
-            <button onClick={toggleAssistant}
-              className="p-2.5 rounded-xl hover:bg-[var(--st-bg-blue-tint)] transition-all text-[var(--st-text-faint)] hover:text-[var(--st-text-primary)] border border-[var(--st-glass-border-strong)] cursor-pointer">
-              <X className="w-5 h-5" />
-            </button>
+            <div className="flex items-center gap-2">
+              <button onClick={handleClearChat} title="Clear chat"
+                className="p-2.5 rounded-xl hover:bg-[var(--st-bg-blue-tint)] transition-all text-[var(--st-text-faint)] hover:text-[var(--st-text-primary)] border border-[var(--st-glass-border)] cursor-pointer">
+                <RotateCcw className="w-4 h-4" />
+              </button>
+              <button onClick={toggleAssistant}
+                className="p-2.5 rounded-xl hover:bg-[var(--st-bg-blue-tint)] transition-all text-[var(--st-text-faint)] hover:text-[var(--st-text-primary)] border border-[var(--st-glass-border-strong)] cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
           </div>
 
           {/* Chat Area */}
@@ -128,7 +152,7 @@ export default function AssistantPanel() {
                   {msg.role === 'assistant' && (
                     <div className="absolute top-0 left-0 w-1 h-full" style={{ background: 'var(--st-gradient-gold)', opacity: 0.8 }} />
                   )}
-                  {msg.text}
+                  {renderText(msg.text)}
                 </div>
               </motion.div>
             ))}
@@ -149,7 +173,7 @@ export default function AssistantPanel() {
             {messages.length < 3 && (
               <div className="mb-4 flex flex-wrap gap-2">
                 {suggestions.map((s, i) => (
-                  <button key={i} onClick={() => setInput(s)}
+                  <button key={i} onClick={() => { setInput(s); }}
                     className="text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg border border-[var(--st-glass-border-strong)] text-[var(--st-text-secondary)] hover:text-[var(--st-text-primary)] hover:border-[var(--st-accent-mocha)]/40 hover:bg-[var(--st-bg-blue-tint)] transition-all shadow-sm bg-white cursor-pointer">
                     {s}
                   </button>
@@ -158,8 +182,8 @@ export default function AssistantPanel() {
             )}
             <div className="relative group">
               <input type="text" value={input} onChange={(e) => setInput(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleSend()}
-                disabled={isTyping} placeholder="Ask your mentor anything..."
+                onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                disabled={isTyping} placeholder="Ask anything..."
                 className="w-full border rounded-xl py-3.5 pl-4 pr-14 text-sm text-[var(--st-text-primary)] focus:outline-none transition-all placeholder:text-[var(--st-text-faint)] disabled:opacity-50"
                 style={{ background: '#FFFFFF', borderColor: 'var(--st-glass-border-strong)' }}
                 onFocus={(e) => { e.target.style.borderColor = 'var(--st-accent-mocha)'; e.target.style.boxShadow = '0 0 0 3px rgba(10,48,84,0.08)'; }}
