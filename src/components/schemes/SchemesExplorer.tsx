@@ -10,8 +10,6 @@ import {
 } from 'lucide-react';
 import { allSchemes, schemeCategories, SchemeItem } from '@/lib/schemes-data';
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
-
 interface GeneratedGuide {
   title: string;
   category: string;
@@ -72,10 +70,10 @@ export default function SchemesExplorer() {
     setActiveTab('steps');
 
     try {
-      const res = await fetch(`${BACKEND_URL}/api/schemes/generate/${scheme.slug}`);
+      const res = await fetch(`/api/schemes/generate/${scheme.slug}`);
       const ct = res.headers.get('content-type') || '';
       if (!res.ok || !ct.includes('application/json')) {
-        setError('Backend unavailable — please start the server on port 5001.');
+        setError('System error — failed to generate guide blueprint.');
         return;
       }
       const data = await res.json();

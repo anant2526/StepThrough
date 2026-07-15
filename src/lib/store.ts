@@ -86,10 +86,9 @@ export const useAppStore = create<AppState>()(
   completeOnboarding: async () => {
     const { onboardingAnswers } = get();
     const token = localStorage.getItem('token');
-    const base = process.env.NEXT_PUBLIC_API_URL || '';
 
     try {
-      const response = await fetch(`${base}/api/user/quiz`, {
+      const response = await fetch(`/api/user/quiz`, {
         method: 'PUT',
         headers: { 
           'Content-Type': 'application/json',

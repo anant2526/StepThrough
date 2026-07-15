@@ -24,8 +24,8 @@ export default function AuthPage() {
   }, []);
 
   const getApiUrl = (endpoint: string) => {
-    const base = process.env.NEXT_PUBLIC_API_URL || '';
-    return `${base}${endpoint}`;
+    // Auth endpoints must always go to the local Next.js server directly
+    return endpoint;
   };
 
   const handleGoogleCallback = async (response: any) => {
